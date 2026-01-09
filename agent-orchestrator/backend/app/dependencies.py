@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.config import Settings, get_settings
 from app.llm import LLMRouter, AnthropicProvider, OpenAICompatibleProvider
-from app.core import CostTracker, TaskDecomposer
+from app.core import CostTracker, TaskDecomposer, ExecutionEngine
+from app.adapters import CrewAIAdapter
 
 # Global instances (initialized on startup)
 _engine = None
@@ -15,11 +16,13 @@ _session_factory = None
 _redis: Redis | None = None
 _llm_router: LLMRouter | None = None
 _cost_tracker: CostTracker | None = None
+_crewai_adapter: CrewAIAdapter | None = None
+_execution_engine: ExecutionEngine | None = None
 
 
 async def init_dependencies(settings: Settings):
     """Initialize all dependencies (called on app startup)."""
-    global _engine, _session_factory, _redis, _llm_router, _cost_tracker
+    global _engine, _session_factory, _redis, _llm_router, _cost_tracker, _crewai_adapter, _execution_engine
 
     # Database
     _engine = create_async_engine(settings.database_url, echo=settings.debug)
@@ -44,6 +47,12 @@ async def init_dependencies(settings: Settings):
         execution_provider=execution_provider,
         cost_tracker=_cost_tracker,
     )
+
+    # CrewAI Adapter
+    _crewai_adapter = CrewAIAdapter(llm_router=_llm_router)
+
+    # Execution Engine
+    _execution_engine = ExecutionEngine(adapter=_crewai_adapter)
 
 
 async def cleanup_dependencies():
@@ -91,6 +100,20 @@ def get_task_decomposer(
     return TaskDecomposer(llm_router)
 
 
+def get_execution_engine() -> ExecutionEngine:
+    """Get execution engine."""
+    if _execution_engine is None:
+        raise RuntimeError("Execution engine not initialized")
+    return _execution_engine
+
+
+def get_crewai_adapter() -> CrewAIAdapter:
+    """Get CrewAI adapter."""
+    if _crewai_adapter is None:
+        raise RuntimeError("CrewAI adapter not initialized")
+    return _crewai_adapter
+
+
 async def verify_api_key(
     x_api_key: str = Header(..., alias="X-API-Key"),
     settings: Settings = Depends(get_settings),
@@ -102,3 +125,23 @@ async def verify_api_key(
             detail="Invalid API key",
         )
     return x_api_key
+
+
+# Rate limiting dependencies
+from app.middleware import create_rate_limit_dependency
+
+# General rate limit: 100 requests per minute
+verify_api_key_with_rate_limit = create_rate_limit_dependency(
+    redis_getter=get_redis,
+    max_requests=100,
+    window_seconds=60,
+    endpoint_name="general",
+)
+
+# Decompose endpoint rate limit: 10 requests per minute
+verify_api_key_decompose = create_rate_limit_dependency(
+    redis_getter=get_redis,
+    max_requests=10,
+    window_seconds=60,
+    endpoint_name="decompose",
+)

@@ -13,8 +13,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - EXECUTION_LLM_URL=${EXECUTION_LLM_URL:-http://host.docker.internal:11434}
       - EXECUTION_LLM_MODEL=${EXECUTION_LLM_MODEL:-qwen2.5-coder:32b}
-      - API_KEY=${API_KEY:-dev-api-key-change-in-production}
+      - API_KEY=${API_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000"]}
       - DAILY_BUDGET_USD=${DAILY_BUDGET_USD:-5.0}
+      - DEBUG=true
     depends_on:
       db:
         condition: service_healthy
@@ -55,7 +57,7 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
       - VITE_WS_URL=ws://localhost:8000
-      - VITE_API_KEY=${API_KEY:-dev-api-key-change-in-production}
+      - VITE_API_KEY=${API_KEY}
     depends_on:
       - api
     volumes:

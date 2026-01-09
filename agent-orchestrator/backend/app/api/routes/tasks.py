@@ -1,22 +1,32 @@
 """API routes for task management."""
 
 from uuid import UUID
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_db, get_task_decomposer, get_cost_tracker, verify_api_key
+from app.dependencies import (
+    get_db,
+    get_task_decomposer,
+    get_cost_tracker,
+    get_execution_engine,
+    verify_api_key,
+    verify_api_key_decompose,
+)
 from app.schemas import (
     TaskCreateRequest,
     TaskDecomposeRequest,
     TaskResponse,
+    SubTaskResponse,
     TaskDecomposition,
     TaskStatus,
     ExecutionCreateResponse,
     ExecutionStatus,
 )
 from app.models import Task, SubTask, Execution
-from app.core import TaskDecomposer, CostTracker
+from app.core import TaskDecomposer, CostTracker, ExecutionEngine
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -26,7 +36,7 @@ async def decompose_task(
     request: TaskDecomposeRequest,
     decomposer: TaskDecomposer = Depends(get_task_decomposer),
     cost_tracker: CostTracker = Depends(get_cost_tracker),
-    _: str = Depends(verify_api_key),
+    _: str = Depends(verify_api_key_decompose),
 ):
     """Decompose a task into subtasks using planning LLM.
 
@@ -82,7 +92,11 @@ async def get_task(
     _: str = Depends(verify_api_key),
 ):
     """Get task by ID with subtasks."""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(
+        select(Task)
+        .where(Task.id == task_id)
+        .options(selectinload(Task.subtasks))
+    )
     task = result.scalar_one_or_none()
 
     if not task:
@@ -91,11 +105,25 @@ async def get_task(
             detail=f"Task {task_id} not found",
         )
 
+    # Map subtasks to response schema
+    subtasks_response = [
+        SubTaskResponse(
+            id=str(st.id),
+            title=st.title,
+            description=st.description,
+            complexity=st.complexity,
+            dependencies=st.dependencies,
+            acceptance_criteria=st.acceptance_criteria,
+            status=st.status,
+        )
+        for st in task.subtasks
+    ]
+
     return TaskResponse(
         id=str(task.id),
         description=task.description,
         status=task.status,
-        subtasks=[],  # TODO: Load subtasks
+        subtasks=subtasks_response,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
@@ -138,11 +166,123 @@ async def execute_task(
     await db.commit()
     await db.refresh(execution)
 
-    # TODO: Add background task to run execution
-    # background_tasks.add_task(run_execution, execution.id)
+    # Start background execution
+    background_tasks.add_task(run_execution, execution.id)
 
     return ExecutionCreateResponse(
         execution_id=str(execution.id),
         task_id=str(task.id),
         status=ExecutionStatus.QUEUED,
     )
+
+
+async def run_execution(execution_id: UUID):
+    """Run task execution in background.
+
+    This function is called by FastAPI's BackgroundTasks.
+    It executes the task using the ExecutionEngine and updates
+    the execution record with results.
+    """
+    from app.dependencies import get_db, get_crewai_adapter
+    from app.api.websockets.progress import send_progress_update
+
+    # Create a new ExecutionEngine instance for this execution
+    # to avoid callback accumulation in global instance
+    adapter = get_crewai_adapter()
+    engine = ExecutionEngine(adapter=adapter)
+
+    # Register WebSocket callback for progress updates
+    engine.on_progress(send_progress_update)
+
+    # Create a new database session for background task
+    async for db in get_db():
+        try:
+            # Load execution and task with subtasks
+            result = await db.execute(
+                select(Execution)
+                .where(Execution.id == execution_id)
+                .options(selectinload(Execution.task).selectinload(Task.subtasks))
+            )
+            execution = result.scalar_one_or_none()
+
+            if not execution:
+                return
+
+            task = execution.task
+
+            # Update status to RUNNING
+            execution.status = ExecutionStatus.RUNNING
+            execution.started_at = datetime.utcnow()
+            await db.commit()
+
+            # Prepare subtasks data from task.decomposition_data or task.subtasks
+            subtasks = []
+            execution_order = []
+
+            if task.decomposition_data:
+                # Use decomposition data if available
+                subtasks = task.decomposition_data.get("subtasks", [])
+                execution_order = task.decomposition_data.get("execution_order", [])
+            elif task.subtasks:
+                # Fallback to subtasks from DB
+                subtasks = [
+                    {
+                        "title": st.title,
+                        "description": st.description,
+                    }
+                    for st in task.subtasks
+                ]
+                # Simple sequential execution order
+                execution_order = [[st.title] for st in task.subtasks]
+
+            if not subtasks:
+                # No subtasks to execute
+                execution.status = ExecutionStatus.FAILED
+                execution.output = "No subtasks defined for execution"
+                execution.completed_at = datetime.utcnow()
+                execution.execution_time_seconds = (
+                    execution.completed_at - execution.started_at
+                ).total_seconds()
+                await db.commit()
+                return
+
+            # Execute task through engine
+            result = await engine.execute_task(
+                execution_id=str(execution_id),
+                subtasks=subtasks,
+                execution_order=execution_order,
+            )
+
+            # Update execution with results
+            execution.completed_at = datetime.utcnow()
+            execution.execution_time_seconds = (
+                execution.completed_at - execution.started_at
+            ).total_seconds()
+
+            if result.get("success"):
+                execution.status = ExecutionStatus.COMPLETED
+                execution.output = str(result.get("results", {}))
+            else:
+                execution.status = ExecutionStatus.FAILED
+                execution.output = f"Execution failed: {result.get('results', {})}"
+
+            # Update task status
+            task.status = TaskStatus.COMPLETED if result.get("success") else TaskStatus.FAILED
+
+            await db.commit()
+
+        except Exception as e:
+            # Handle any errors during execution
+            try:
+                execution.status = ExecutionStatus.FAILED
+                execution.output = f"Error during execution: {str(e)}"
+                execution.completed_at = datetime.utcnow()
+                if execution.started_at:
+                    execution.execution_time_seconds = (
+                        execution.completed_at - execution.started_at
+                    ).total_seconds()
+                await db.commit()
+            except Exception:
+                pass  # Silently fail if we can't update the error state
+        finally:
+            break  # Exit the async generator
