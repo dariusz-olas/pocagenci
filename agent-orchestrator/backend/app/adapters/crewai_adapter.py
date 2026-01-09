@@ -6,7 +6,7 @@ from typing import Optional, Any
 import time
 
 from crewai import Agent, Task, Crew, Process
-from langchain.llms.base import LLM
+from langchain_core.language_models.base import BaseLanguageModel
 
 from app.adapters.base import BaseAdapter, AgentConfig, TaskResult
 from app.llm import LLMRouter
@@ -27,29 +27,39 @@ class CrewAIAdapter(BaseAdapter):
     def name(self) -> str:
         return "crewai"
 
-    def _create_sync_llm_wrapper(self, tier: str) -> LLM:
+    def _create_sync_llm_wrapper(self, tier: str) -> BaseLanguageModel:
         """Create synchronous LLM wrapper for CrewAI.
 
-        CrewAI uses LangChain's sync LLM interface, so we need
+        CrewAI uses LangChain's language model interface, so we need
         to wrap our async router in a sync wrapper.
         """
         router = self.llm
 
-        class SyncRouterLLM(LLM):
+        class SyncRouterLLM(BaseLanguageModel):
             """Sync wrapper around async LLM router."""
 
             @property
             def _llm_type(self) -> str:
                 return "router"
 
-            def _call(self, prompt: str, stop: Optional[list[str]] = None, **kwargs) -> str:
-                """Sync call that runs async code in new event loop."""
+            def _generate(
+                self,
+                prompts: list[str],
+                stop: Optional[list[str]] = None,
+                run_manager = None,
+                **kwargs
+            ):
+                """Generate response - required by BaseLanguageModel."""
+                from langchain_core.outputs import LLMResult, Generation
                 loop = asyncio.new_event_loop()
                 try:
+                    result = ""
                     if tier == "planning":
-                        return loop.run_until_complete(router.planning_call(prompt))
+                        result = loop.run_until_complete(router.planning_call(prompts[0]))
                     else:
-                        return loop.run_until_complete(router.execution_call(prompt))
+                        result = loop.run_until_complete(router.execution_call(prompts[0]))
+                    
+                    return LLMResult(generations=[[Generation(text=result)]])
                 finally:
                     loop.close()
 

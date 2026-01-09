@@ -69,11 +69,28 @@ docker-compose logs -f api
 
 ## Database Migrations
 
-Run migrations after first start:
-
+### From Docker Container
 ```bash
 docker-compose exec api alembic upgrade head
 ```
+
+### From Host (Linux/Mac)
+```bash
+cd backend
+source .venv/bin/activate  # lub .venv\Scripts\activate na Windows
+alembic upgrade head
+```
+
+### From Host (Windows)
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+```
+
+**Uwaga:** Migracje z hosta wymagają `psycopg2-binary` i używają `localhost` zamiast `db` jako hosta (automatycznie konwertowane w `alembic/env.py`).
+
+Więcej informacji: [MIGRATION_SETUP.md](backend/MIGRATION_SETUP.md)
 
 ## Health Checks
 
@@ -130,7 +147,18 @@ Check DATABASE_URL format:
 postgresql+asyncpg://user:password@host:port/database
 ```
 
+## Windows ARM64 Support
+
+Projekt jest w pełni wspierany na Windows ARM64:
+
+- **Quick Start:** [QUICK_START_WINDOWS.md](QUICK_START_WINDOWS.md)
+- **Detailed Guide:** [SETUP_WINDOWS_ARM64.md](SETUP_WINDOWS_ARM64.md)
+- **PowerShell Scripts:** `setup-windows.ps1` (alternatywa dla Makefile)
+- **Troubleshooting:** [TROUBLESHOOTING_DOCKER.md](TROUBLESHOOTING_DOCKER.md)
+- **Changelog:** [CHANGELOG_WINDOWS_SETUP.md](CHANGELOG_WINDOWS_SETUP.md)
+
 ## Resources
 
 - Documentation: See PRODUCTION_READINESS.md
 - Issues: Check TASKS.md for known issues
+- Windows Setup: See SETUP_WINDOWS_ARM64.md

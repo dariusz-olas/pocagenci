@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
 
     # === LLM - Planning Tier ===
-    anthropic_api_key: str = ""
+    anthropic_api_key: str = Field(
+        default="",
+        description="Anthropic API key for planning tier (required for task decomposition)",
+    )
 
     # === LLM - Execution Tier ===
     execution_llm_url: str = "http://localhost:11434"

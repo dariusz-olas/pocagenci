@@ -1,4 +1,4 @@
-# Agent Orchestrator - Przewodnik dla Asystentów AI
+cd # Agent Orchestrator - Przewodnik dla Asystentów AI
 
 > **Dla:** Claude Code, Cursor IDE, GitHub Copilot, i innych asystentów AI
 > **Wersja:** 0.1.0 (POC)
@@ -46,6 +46,10 @@
 | [TASKS.md](TASKS.md) | Szczegółowa lista zadań implementacyjnych |
 | [agent-orchestrator/README.md](agent-orchestrator/README.md) | Quick start guide |
 | [agent-orchestrator/SETUP.md](agent-orchestrator/SETUP.md) | Konfiguracja środowiska |
+| [agent-orchestrator/SETUP_WINDOWS_ARM64.md](agent-orchestrator/SETUP_WINDOWS_ARM64.md) | **NOWY:** Przewodnik Windows ARM64 |
+| [agent-orchestrator/QUICK_START_WINDOWS.md](agent-orchestrator/QUICK_START_WINDOWS.md) | **NOWY:** Szybki start Windows |
+| [agent-orchestrator/VERIFICATION_CHECKLIST.md](agent-orchestrator/VERIFICATION_CHECKLIST.md) | **NOWY:** Checklista weryfikacji |
+| [agent-orchestrator/TROUBLESHOOTING_DOCKER.md](agent-orchestrator/TROUBLESHOOTING_DOCKER.md) | **NOWY:** Rozwiązywanie problemów Docker |
 | [agent-orchestrator/DEMO_SCENARIOS.md](agent-orchestrator/DEMO_SCENARIOS.md) | Scenariusze demo do testowania |
 
 ---
@@ -130,6 +134,7 @@ Przed implementacją sprawdź:
 
 ## Komendy do uruchomienia
 
+### Linux/Mac (Makefile)
 ```bash
 # Setup
 cd agent-orchestrator
@@ -140,8 +145,8 @@ cp backend/.env.example backend/.env
 make install          # Instalacja zależności
 make docker-up        # Start PostgreSQL + Redis
 make migrate          # Migracje bazy
-make backend          # Start backend (http://localhost:8000)
-make frontend         # Start frontend (http://localhost:3000)
+make dev-backend      # Start backend (http://localhost:8000)
+make dev-frontend     # Start frontend (http://localhost:3000)
 
 # Testy
 make test             # Wszystkie testy backend
@@ -151,6 +156,29 @@ make test-cov         # Testy z coverage
 make lint             # Sprawdzenie kodu
 make format           # Formatowanie
 ```
+
+### Windows ARM64 (PowerShell)
+```powershell
+# Setup
+cd agent-orchestrator
+.\generate-api-key.ps1
+# Utwórz backend\.env z wymaganymi kluczami
+
+# Development
+.\setup-windows.ps1 install      # Instalacja zależności
+.\setup-windows.ps1 docker-up    # Start PostgreSQL + Redis
+.\setup-windows.ps1 migrate      # Migracje bazy
+.\setup-windows.ps1 backend      # Start backend (http://localhost:8000)
+.\setup-windows.ps1 frontend     # Start frontend (http://localhost:3000)
+
+# Testy
+.\setup-windows.ps1 test         # Wszystkie testy backend
+
+# Linting
+.\setup-windows.ps1 lint         # Sprawdzenie kodu
+```
+
+**📚 Więcej:** [Komendy PowerShell](agent-orchestrator/POWERSHELL_COMMANDS.md)
 
 ---
 
@@ -209,6 +237,23 @@ Szczegóły w: [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)
 - **Dokumentacja techniczna:** [PLAN_DEVELOPMENT.md](PLAN_DEVELOPMENT.md)
 - **Znane problemy:** [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)
 - **Lista zadań:** [TASKS.md](TASKS.md)
+
+---
+
+---
+
+## ⚠️ Ważne Uwagi dla Windows ARM64
+
+Jeśli pracujesz na Windows ARM64, sprawdź:
+- [SETUP_WINDOWS_ARM64.md](agent-orchestrator/SETUP_WINDOWS_ARM64.md) - szczegółowy przewodnik
+- [QUICK_START_WINDOWS.md](agent-orchestrator/QUICK_START_WINDOWS.md) - szybki start
+- [CHANGELOG_WINDOWS_SETUP.md](agent-orchestrator/CHANGELOG_WINDOWS_SETUP.md) - lista naprawionych problemów
+
+**Znane różnice:**
+- Użyj `setup-windows.ps1` zamiast `make`
+- Docker Desktop wymaga WSL2
+- Migracje wymagają `psycopg2-binary` (automatycznie instalowane)
+- CrewAI wymaga `langchain` (automatycznie instalowane)
 
 ---
 

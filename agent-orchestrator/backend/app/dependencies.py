@@ -36,8 +36,14 @@ async def init_dependencies(settings: Settings):
 
     # LLM Providers
     planning_provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+    
+    # Build execution LLM URL - handle both with and without /v1 suffix
+    execution_url = settings.execution_llm_url.rstrip("/")
+    if not execution_url.endswith("/v1"):
+        execution_url = f"{execution_url}/v1"
+    
     execution_provider = OpenAICompatibleProvider(
-        base_url=f"{settings.execution_llm_url}/v1",
+        base_url=execution_url,
         model=settings.execution_llm_model,
     )
 
