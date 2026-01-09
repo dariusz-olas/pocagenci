@@ -1,6 +1,7 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
+from pydantic import field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,10 +33,28 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
 
     # === Security ===
-    api_key: str = "dev-api-key-change-in-production"
+    api_key: str = Field(
+        ...,
+        min_length=32,
+        description="API key for authentication (min 32 characters)",
+    )
+
+    # === CORS ===
+    cors_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://127.0.0.1:3000"],
+        description="List of allowed CORS origins",
+    )
 
     # === Cost Management ===
     daily_budget_usd: float = 5.0
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        """Validate API key length and format."""
+        if len(v) < 32:
+            raise ValueError("API key must be at least 32 characters long")
+        return v
 
 
 @lru_cache
